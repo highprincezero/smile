@@ -3,7 +3,7 @@ from   keybert      import KeyBERT
 from   transformers import pipeline
 import streamlit    as st
 import pandas       as pd
-import pyautogui
+# import pyautogui
 import os
 import openai
 
