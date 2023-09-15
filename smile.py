@@ -7,6 +7,8 @@ import pyautogui
 import os
 import openai
 
+with st.status('Installing packages'):
+    os.system("pip install -r ./requirements.txt")
 
 opt_method = st.sidebar.selectbox('Option', ['Guide', 'Button', 'Chat'])
 

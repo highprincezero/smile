@@ -2,3 +2,9 @@ keybert
 transformers
 pyautogui
 openai
+streamlit
+
+# LLM
+dotenv
+langchain
+pinecone
