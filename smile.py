@@ -22,8 +22,8 @@ if opt_method == 'Guide':
 
 if opt_method == 'Chat':
     col1, col2, col3 = st.columns(3)
-    if col3.button('Clear'):
-        pyautogui.hotkey("command", "r")
+    # if col3.button('Clear'):
+    #     pyautogui.hotkey("command", "r")
     
     col3.caption('This bot can perform the following: ')
     col3.caption('    ||  analyze a document or documents,')
