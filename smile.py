@@ -5,7 +5,15 @@ import streamlit    as st
 import pandas       as pd
 # import pyautogui
 import os
-import openai
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
 
 with st.status('Installing packages'):
     os.system("pip install -r ./requirements.txt")
@@ -61,11 +69,10 @@ if opt_method == 'Chat':
             message = col2.text_input("User : ")
             if opt_source == 'Global':       
                 
-                openai.api_key = col2.text_input('Enter API', type = 'password')
                 messages       = [{"role": "system", "content": "You are a intelligent assistant."}]
                 if message:
                     messages.append({"role": "user", "content": message},)
-                    chat = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
+                    chat = client.chat.completions.create(model=os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo"), messages=messages)
                 reply = chat.choices[0].message.content
                 col2.caption(reply)
                 messages.append({"role": "assistant", "content": reply})

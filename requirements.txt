@@ -5,6 +5,6 @@ openai
 streamlit
 
 # LLM
-dotenv
+python-dotenv
 langchain
 pinecone
