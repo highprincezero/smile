@@ -8,3 +8,8 @@ streamlit
 python-dotenv
 langchain
 pinecone
+
+# API Server
+fastapi
+uvicorn[standard]
+python-multipart
