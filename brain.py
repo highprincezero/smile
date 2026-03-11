@@ -9,6 +9,14 @@ import openai
 import os
 from pathlib import Path
 
+# Support both OpenAI (preferred) and OpenRouter
+_OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
+_OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
+_USE_OPENROUTER = not _OPENAI_KEY and bool(_OPENROUTER_KEY)
+_BASE_URL = "https://openrouter.ai/api/v1" if _USE_OPENROUTER else None
+_API_KEY = _OPENAI_KEY or _OPENROUTER_KEY
+_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini") if _USE_OPENROUTER else "gpt-4o-mini"
+
 # ---------- load prompts from prompt/ folder ----------
 _prompt_dir = Path(__file__).parent / "prompt"
 
@@ -56,18 +64,36 @@ def _get_summarizer():
 # All prompts loaded from prompt/ folder — no hardcoded strings
 
 
-def is_on_topic(user_message: str, api_key: str) -> bool:
+def _client(api_key: str | None = None):
+    """Build OpenAI-compatible client (works with OpenRouter too)."""
+    key = api_key or _API_KEY
+    kwargs = {"api_key": key}
+    if _BASE_URL:
+        kwargs["base_url"] = _BASE_URL
+    return openai.OpenAI(**kwargs)
+
+
+def is_on_topic(user_message: str, messages: list[dict] | None = None, api_key: str | None = None) -> bool:
     """
     Gate check: uses a separate LLM call (classification-only) to determine
     if the user's message is on-topic BEFORE the chat model ever sees it.
+    Includes recent conversation context so the gate can understand follow-ups.
     """
-    client = openai.OpenAI(api_key=api_key)
+    client = _client(api_key)
+
+    # Build context: include last few exchanges so gate understands references
+    gate_messages = [{"role": "system", "content": GATE_PROMPT}]
+    if messages:
+        # Include up to last 4 messages as context (2 exchanges)
+        recent = messages[-4:]
+        for msg in recent[:-1]:  # all except the last (which is the user message)
+            role = "user" if msg.get("role") == "user" else "assistant"
+            gate_messages.append({"role": role, "content": msg.get("text", "")})
+    gate_messages.append({"role": "user", "content": user_message})
+
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": GATE_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
+        model=_MODEL,
+        messages=gate_messages,
         max_tokens=5,
         temperature=0,
     )
@@ -77,12 +103,12 @@ def is_on_topic(user_message: str, api_key: str) -> bool:
 
 # ---------- chat (from smile.py Global mode) ----------
 
-def chat(messages: list[dict], api_key: str) -> str:
+def chat(messages: list[dict], api_key: str | None = None) -> str:
     """
     Smile-agent chat — mirrors smile.py's Global chat.
     System prompt comes from prompt/base.txt — frontend cannot override.
     """
-    client = openai.OpenAI(api_key=api_key)
+    client = _client(api_key)
 
     openai_messages = [
         {"role": "system", "content": SYSTEM_PROMPT}
@@ -92,13 +118,13 @@ def chat(messages: list[dict], api_key: str) -> str:
         openai_messages.append({"role": role, "content": msg.get("text", "")})
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=_MODEL,
         messages=openai_messages,
     )
     return response.choices[0].message.content
 
 
-def chat_stream(messages: list[dict], api_key: str):
+def chat_stream(messages: list[dict], api_key: str | None = None):
     """
     Streaming version of smile-agent chat.
     Runs a topic gate FIRST — if off-topic, the chat model never sees the message.
@@ -110,13 +136,13 @@ def chat_stream(messages: list[dict], api_key: str):
             last_user_msg = msg.get("text", "")
             break
 
-    if last_user_msg and not is_on_topic(last_user_msg, api_key):
+    if last_user_msg and not is_on_topic(last_user_msg, messages, api_key):
         # Off-topic: yield canned response, chat model never called
         yield OFF_TOPIC_RESPONSE
         return
 
     # --- ON-TOPIC: proceed to chat model ---
-    client = openai.OpenAI(api_key=api_key)
+    client = _client(api_key)
 
     openai_messages = [
         {"role": "system", "content": SYSTEM_PROMPT}
@@ -126,7 +152,7 @@ def chat_stream(messages: list[dict], api_key: str):
         openai_messages.append({"role": role, "content": msg.get("text", "")})
 
     stream = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=_MODEL,
         messages=openai_messages,
         stream=True,
     )
