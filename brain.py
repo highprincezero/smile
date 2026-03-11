@@ -7,6 +7,17 @@ All AI capabilities route through here.
 
 import openai
 import os
+from pathlib import Path
+
+# ---------- load prompts from prompt/ folder ----------
+_prompt_dir = Path(__file__).parent / "prompt"
+
+def _load_prompt(name: str) -> str:
+    return (_prompt_dir / name).read_text().strip()
+
+SYSTEM_PROMPT = _load_prompt("base.txt")
+GATE_PROMPT = _load_prompt("gate.txt")
+OFF_TOPIC_RESPONSE = _load_prompt("off_topic.txt")
 
 # KeyBERT + transformers are imported lazily inside getter functions
 # so the server starts fast and only loads models when first needed.
@@ -41,17 +52,40 @@ def _get_summarizer():
     return _summarizer
 
 
+# ---------- topic gate (separate model as classifier) ----------
+# All prompts loaded from prompt/ folder — no hardcoded strings
+
+
+def is_on_topic(user_message: str, api_key: str) -> bool:
+    """
+    Gate check: uses a separate LLM call (classification-only) to determine
+    if the user's message is on-topic BEFORE the chat model ever sees it.
+    """
+    client = openai.OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": GATE_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        max_tokens=5,
+        temperature=0,
+    )
+    result = response.choices[0].message.content.strip().lower()
+    return result == "on_topic"
+
+
 # ---------- chat (from smile.py Global mode) ----------
 
-def chat(messages: list[dict], api_key: str, system_prompt: str = None) -> str:
+def chat(messages: list[dict], api_key: str) -> str:
     """
     Smile-agent chat — mirrors smile.py's Global chat.
-    Uses openai.ChatCompletion pattern from the original agent.
+    System prompt comes from prompt/base.txt — frontend cannot override.
     """
     client = openai.OpenAI(api_key=api_key)
 
     openai_messages = [
-        {"role": "system", "content": system_prompt or "You are an intelligent assistant."}
+        {"role": "system", "content": SYSTEM_PROMPT}
     ]
     for msg in messages:
         role = "user" if msg.get("role") == "user" else "assistant"
@@ -64,14 +98,28 @@ def chat(messages: list[dict], api_key: str, system_prompt: str = None) -> str:
     return response.choices[0].message.content
 
 
-def chat_stream(messages: list[dict], api_key: str, system_prompt: str = None):
+def chat_stream(messages: list[dict], api_key: str):
     """
-    Streaming version of smile-agent chat. Yields token strings.
+    Streaming version of smile-agent chat.
+    Runs a topic gate FIRST — if off-topic, the chat model never sees the message.
     """
+    # --- GATE: check the latest user message ---
+    last_user_msg = ""
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            last_user_msg = msg.get("text", "")
+            break
+
+    if last_user_msg and not is_on_topic(last_user_msg, api_key):
+        # Off-topic: yield canned response, chat model never called
+        yield OFF_TOPIC_RESPONSE
+        return
+
+    # --- ON-TOPIC: proceed to chat model ---
     client = openai.OpenAI(api_key=api_key)
 
     openai_messages = [
-        {"role": "system", "content": system_prompt or "You are an intelligent assistant."}
+        {"role": "system", "content": SYSTEM_PROMPT}
     ]
     for msg in messages:
         role = "user" if msg.get("role") == "user" else "assistant"

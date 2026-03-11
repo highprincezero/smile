@@ -30,18 +30,15 @@ app.add_middleware(
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 
-DEFAULT_SYSTEM_PROMPT = "You are an intelligent assistant."
-
 
 @app.post("/api/chat")
 async def chat(request: Request):
     """Chat via smile-agent brain — streams response via SSE."""
     body = await request.json()
     user_messages = body.get("messages", [])
-    system_prompt = body.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
     async def generate():
-        for token in brain.chat_stream(user_messages, API_KEY, system_prompt):
+        for token in brain.chat_stream(user_messages, API_KEY):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"
 
