@@ -73,7 +73,7 @@ def _client(api_key: str | None = None):
     return openai.OpenAI(**kwargs)
 
 
-def is_on_topic(user_message: str, messages: list[dict] | None = None, api_key: str | None = None) -> bool:
+def is_on_topic_openai(user_message: str, messages: list[dict] | None = None, api_key: str | None = None) -> bool:
     """
     Gate check: uses a separate LLM call (classification-only) to determine
     if the user's message is on-topic BEFORE the chat model ever sees it.
@@ -124,7 +124,7 @@ def chat(messages: list[dict], api_key: str | None = None) -> str:
     return response.choices[0].message.content
 
 
-def chat_stream(messages: list[dict], api_key: str | None = None):
+def chat_stream_openai(messages: list[dict], api_key: str | None = None):
     """
     Streaming version of smile-agent chat.
     Runs a topic gate FIRST — if off-topic, the chat model never sees the message.
@@ -136,7 +136,7 @@ def chat_stream(messages: list[dict], api_key: str | None = None):
             last_user_msg = msg.get("text", "")
             break
 
-    if last_user_msg and not is_on_topic(last_user_msg, messages, api_key):
+    if last_user_msg and not is_on_topic_openai(last_user_msg, messages, api_key):
         # Off-topic: yield canned response, chat model never called
         yield OFF_TOPIC_RESPONSE
         return

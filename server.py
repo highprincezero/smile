@@ -17,6 +17,7 @@ load_dotenv()
 
 import brain  # smile-agent brain
 from bonds.router import router as bonds_router
+from smile_agent import chat_stream_claude
 
 app = FastAPI(title="Smile-Agent API")
 app.include_router(bonds_router)
@@ -35,12 +36,26 @@ API_KEY = os.getenv("OPENAI_API_KEY")
 
 @app.post("/api/chat")
 async def chat(request: Request):
-    """Chat via smile-agent brain — streams response via SSE."""
+    """Chat via Claude Agent SDK (primary path) — streams response via SSE."""
+    body = await request.json()
+    messages = body.get("messages", [])
+
+    async def generate():
+        async for chunk in chat_stream_claude(messages):
+            yield f"data: {json.dumps({'token': chunk})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/chat-backdoor")
+async def chat_backdoor(request: Request):
+    """Legacy OpenAI/OpenRouter path — kept as fallback."""
     body = await request.json()
     user_messages = body.get("messages", [])
 
     async def generate():
-        for token in brain.chat_stream(user_messages, API_KEY):
+        for token in brain.chat_stream_openai(user_messages, API_KEY):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"
 

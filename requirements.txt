@@ -18,3 +18,6 @@ python-multipart
 httpx
 beautifulsoup4
 cachetools
+
+# Claude Agent SDK (primary chat path)
+claude-agent-sdk
