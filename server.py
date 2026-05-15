@@ -16,8 +16,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import brain  # smile-agent brain
+from bonds.router import router as bonds_router
 
 app = FastAPI(title="Smile-Agent API")
+app.include_router(bonds_router)
 
 # Allow all origins so ngrok/cloudflare tunnels work
 app.add_middleware(
