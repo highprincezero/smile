@@ -13,3 +13,8 @@ pinecone
 fastapi
 uvicorn[standard]
 python-multipart
+
+# Bond pipeline (POST /api/analyze-bond)
+httpx
+beautifulsoup4
+cachetools

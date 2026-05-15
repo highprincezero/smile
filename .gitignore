@@ -1,5 +1,11 @@
 .DS_Store
 .env
+.env.*
 .history/
 __pycache__/
 *.pyc
+.venv/
+venv/
+BUP-*/
+.claude/
+*.bak
