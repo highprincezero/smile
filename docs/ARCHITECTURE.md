@@ -93,7 +93,7 @@ Smile does NOT talk to: a database, a job queue, a CDN, or any third-party stora
 | `prompt/off_topic.txt` | Canned off-topic reply | `brain.py` (backdoor only) |
 | `prompt/normalize_bond.txt` | LLM normalize prompt for bond data | `bonds/normalize.py` |
 | `prompt/greeting.txt` | Initial chat greeting | Frontend (loaded statically) |
-| `skills/bond-analysis/SKILL.md` | Claude Agent SDK skill overlay — when/how to use bond tools | Auto-loaded by SDK (`setting_sources=["project"]`) |
+| `skills/bond-data-collector/SKILL.md` | Claude Agent SDK skill overlay — when/how to use bond tools | Auto-loaded by SDK (`setting_sources=["project"]`) |
 | `.env` | Local secrets + model config | `python-dotenv` |
 
 ---
@@ -149,7 +149,7 @@ Smile does NOT talk to: a database, a job queue, a CDN, or any third-party stora
 ```
 User: "Analyze SM Bond Series 7 for me"
   ↓
-Claude (loaded skills/bond-analysis/SKILL.md):
+Claude (loaded skills/bond-data-collector/SKILL.md):
   → Tool call: analyze_bond(security_id="SM Bond Series 7", type="corporate")
   ↓
 smile_agent.py:analyze_bond() → httpx POST localhost:8000/api/analyze-bond
@@ -202,7 +202,7 @@ options = ClaudeAgentOptions(
 
 | Skill | Trigger description (frontmatter) | What it teaches Claude |
 |---|---|---|
-| `bond-analysis` | "Use when the user mentions a specific bond by security ID, ticker, or asks for yield, maturity, rating, or bond data analysis." | Call `analyze_bond` → optionally `summarize` long fields → render as markdown table with yield/maturity/rating/issuer + ₱ currency + source URL citation. Do NOT call `extract_keywords` on bond data. |
+| `bond-data-collector` | "Use when the user mentions a specific bond by security ID, ticker, or asks for yield, maturity, rating, or bond data analysis." | Call `analyze_bond` → optionally `summarize` long fields → render as markdown table with yield/maturity/rating/issuer + ₱ currency + source URL citation. Do NOT call `extract_keywords` on bond data. |
 
 **Progressive disclosure** — only the frontmatter `description:` lives in Claude's context at idle. The body is loaded on-demand when Claude judges the description matches the user's intent.
 
@@ -255,7 +255,7 @@ These shaped Phase 1's scope:
 | **Capability = function + tool wrapper** | Each capability is a `brain.py` function AND a thin `@tool` wrapper. Direct REST users keep using REST; agent users can also call it | Doubled surface but zero migration burden for the frontend |
 | **Tools call their own REST endpoint** | `analyze_bond` tool does `httpx → localhost:8000/api/analyze-bond` instead of `import bonds.router` | Slight overhead, but the bond pipeline stays untouched (modularity) |
 | **System prompt is the only guardrail in the Claude path** | No separate gate-LLM; rely on `prompt/base.txt`'s topic-restriction + injection-defense rules | Cheaper, simpler, and Claude 4.7 follows system prompts closely |
-| **Skills are optional, not required** | The system works without `skills/`. Skills are workflow overlays for common patterns | First skill (`bond-analysis`) is illustrative; more can be added on demand |
+| **Skills are optional, not required** | The system works without `skills/`. Skills are workflow overlays for common patterns | First skill (`bond-data-collector`) is illustrative; more can be added on demand |
 
 ---
 
@@ -264,7 +264,7 @@ These shaped Phase 1's scope:
 | Phase | Scope | Status | Branch |
 |---|---|---|---|
 | **0** | Baseline: OpenAI-only chat at `/api/chat`, bonds pipeline as standalone REST | Pre-existing | `main` (merged via PR #4) |
-| **1** | Claude Agent SDK chat path + 4 capability tools + bond-analysis skill | **DONE** (this doc) | `sdk-conversion-opus` (commit `dc11524`) |
+| **1** | Claude Agent SDK chat path + 4 capability tools + bond-data-collector skill | **DONE** (this doc) | `sdk-conversion-opus` (commit `dc11524`) |
 | **2 (optional)** | Deprecate `/api/chat-backdoor`; frontend always uses Claude. Frontend `analyzeBond.ts` deleted (Claude calls bond tool instead of frontend) | Pending decision | TBD |
 | **3 (optional)** | Multi-agent: sub-agent for bond-research, sub-agent for ESG-explainer, coordinator on `/api/chat`. Add memory store for user preferences. | Speculative | TBD |
 | **4 (optional)** | Move from Cloudflare tunnel → managed deployment (Fly.io / Railway / Render). Add observability (Sentry). | Speculative | TBD |
@@ -291,7 +291,7 @@ smile/
 │   ├── greeting.txt             # Frontend greeting copy
 │   └── normalize_bond.txt       # Bond normalize prompt
 ├── skills/                      # NEW — Agent SDK skill overlays
-│   └── bond-analysis/
+│   └── bond-data-collector/
 │       └── SKILL.md
 ├── docs/
 │   └── ARCHITECTURE.md          # This file

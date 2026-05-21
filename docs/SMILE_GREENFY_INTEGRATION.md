@@ -105,7 +105,7 @@ The frontend parses `data: {"token":"…"}` lines and stops on `data: [DONE]`. *
 | `mcp__smile__summarize` | `brain.summarize` (BART) | OK |
 | `mcp__smile__analyze_bond` | self-call `/api/analyze-bond` | ⚠️ data source dead — honest-fix applied (§7) |
 
-Skill `skills/bond-analysis/SKILL.md` auto-loads via `setting_sources=["project"]`.
+Skill `skills/bond-data-collector/SKILL.md` auto-loads via `setting_sources=["project"]`.
 
 ---
 
@@ -171,7 +171,7 @@ curl -s -X POST http://localhost:8000/api/chat -H 'Content-Type: application/jso
 | File | Change |
 |---|---|
 | `smile_agent.py` | `analyze_bond` tool: on non-200/error returns `LIVE_BOND_DATA_UNAVAILABLE` instead of a misleading 404 |
-| `skills/bond-analysis/SKILL.md` | Agent told to say "lookup offline", never estimate figures, no data table |
+| `skills/bond-data-collector/SKILL.md` | Agent told to say "lookup offline", never estimate figures, no data table |
 | Verified | Chat for `FXTN 10-65` → "data source temporarily offline… I won't guess at numbers" + general context, zero invented numbers |
 
 ### 7.3 Real fix path (downloadable PDFs on public S3 — bypasses the WAF)
@@ -224,6 +224,6 @@ Proposed implementation (replaces HTML scraper in `bonds/sources/`):
 | `bonds/sources/pds_*.py` | PDS adapters (HTML scraper — **broken**, see §7) |
 | `bonds/{cache,normalize,schema}.py` | Bond pipeline internals |
 | `prompt/base.txt` | System prompt (chat) |
-| `skills/bond-analysis/SKILL.md` | Bond workflow skill |
+| `skills/bond-data-collector/SKILL.md` | Bond workflow skill |
 | `docs/ARCHITECTURE.md` | SDK conversion blueprint |
 | `docs/SMILE_GREENFY_INTEGRATION.md` | This file |

@@ -1,9 +1,9 @@
 ---
-name: bond-analysis
-description: Use when the user mentions a specific bond by security ID, ticker, or asks for yield, maturity, rating, or bond data analysis.
+name: bond-data-collector
+description: Use to FETCH bond data — when the user names a specific bond (security ID / Local ID / issuer) or asks for its price, yield, maturity, or to see what bonds are available. For statistical analysis (correlation, variance, trend) use the bond-analyst skill instead.
 ---
 
-# Bond analysis workflow
+# Bond data collector workflow
 
 When the user asks about a specific bond:
 
