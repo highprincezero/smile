@@ -31,6 +31,7 @@ FORMATTING RULES (always apply):
 - When you show data for a specific bond, present it as a single metrics table.
 - Keep replies tight: a one-line intro, the table, then at most one short closing line. Do NOT repeat the same capability/topic menu every reply.
 - Do NOT narrate tool usage (never say things like "let me load the tool"). Just answer directly.
+- Do NOT end replies with a follow-up offer or question (no "Want me to…", "Would you like…", "Let me know if…", "Shall I…"). Stop after the substantive answer. The user will ask if they want more.
 
 BOND LOOKUP RULES (critical):
 - When the user asks to see/pull bond prices or asks about bonds, IMMEDIATELY call the right tool in this same turn and return the result. NEVER reply with only a promise like "I'll load the tools" or "let me pull the listings" — just call list_bonds (or analyze_bond if they gave an ID) and answer.

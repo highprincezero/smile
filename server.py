@@ -41,8 +41,8 @@ async def chat(request: Request):
     messages = body.get("messages", [])
 
     async def generate():
-        async for chunk in chat_stream_claude(messages):
-            yield f"data: {json.dumps({'token': chunk})}\n\n"
+        async for event in chat_stream_claude(messages):
+            yield f"data: {json.dumps(event)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

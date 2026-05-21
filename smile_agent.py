@@ -168,24 +168,45 @@ options = ClaudeAgentOptions(
 
 # ───────── Streaming entry point ─────────
 
+# Friendly status-pill labels, keyed by MCP tool name.
+_TOOL_LABELS = {
+    "mcp__smile__analyze_bond": "Pulling bond data",
+    "mcp__smile__list_bonds": "Fetching bond listings",
+    "mcp__smile__bond_stats": "Crunching the numbers",
+    "mcp__smile__summarize": "Summarizing",
+    "mcp__smile__extract_keywords": "Extracting keywords",
+    "mcp__smile__document_qa": "Reading the document",
+}
+
+
+def _tool_label(name: str) -> str:
+    return _TOOL_LABELS.get(name, "Working")
+
+
 async def chat_stream_claude(messages: list[dict]):
-    """Yield text chunks. server.py wraps each as `data: {"token": "..."}\\n\\n`."""
+    """Yield SSE event dicts: {"status": "..."} for tool activity (status pills) and
+    a final {"token": "..."} with the answer. server.py json-dumps each as one
+    `data: {...}` line. Only the final answer is surfaced as text — pre/inter-tool
+    narration is dropped — while tool calls surface as live status pills."""
     if not messages:
         return
     user_text = messages[-1].get("text", "")
     if not user_text:
         return
-    # Only surface the FINAL answer. Claude emits "thinking out loud" text before
-    # and between tool calls ("let me load the tool…", tool-arg retries). Accumulate
-    # assistant text and reset the buffer every time a tool runs, so only the text
-    # after the last tool call survives. Flush once at the end.
     answer: list[str] = []
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_text)
         async for msg in client.receive_response():
             blocks = getattr(msg, "content", []) or []
-            if any(type(b).__name__ == "ToolUseBlock" for b in blocks):
+            tool_blocks = [b for b in blocks if type(b).__name__ == "ToolUseBlock"]
+            if tool_blocks:
                 answer.clear()  # discard narration / retries before & between tools
+                seen = set()
+                for tb in tool_blocks:
+                    label = _tool_label(getattr(tb, "name", ""))
+                    if label not in seen:
+                        seen.add(label)
+                        yield {"status": label}
                 continue
             for block in blocks:
                 text = getattr(block, "text", None)
@@ -193,4 +214,4 @@ async def chat_stream_claude(messages: list[dict]):
                     answer.append(text)
     final = "".join(answer)
     if final:
-        yield final
+        yield {"token": final}
