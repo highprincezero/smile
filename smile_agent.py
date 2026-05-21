@@ -104,6 +104,8 @@ options = ClaudeAgentOptions(
 
 async def chat_stream_claude(messages: list[dict]):
     """Yield text chunks. server.py wraps each as `data: {"token": "..."}\\n\\n`."""
+    if not messages:
+        return
     user_text = messages[-1].get("text", "")
     if not user_text:
         return
