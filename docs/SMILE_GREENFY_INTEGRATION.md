@@ -1,6 +1,6 @@
 # Smile ↔ Greenfy — Integration & Operations
 
-> **BLUF.** Smile is the FastAPI backend; Greenfy.ai is the frontend. Greenfy's chat widget and dashboard call Smile's `/api/chat`, which is now driven by the **Claude Agent SDK**. The two are bridged over a **Cloudflare quick tunnel** to a Mac mini (`gZeroMacMiniM4`) running uvicorn on `localhost:8000`. This doc captures the full system, both directions of the integration, the infra, and the open bond-data work — as of **2026-05-21**.
+> **BLUF.** Smile is the FastAPI backend; Greenfy.ai is the frontend. Greenfy's chat widget and dashboard call Smile's `/api/chat`, which is now driven by the **Claude Agent SDK**. The two are bridged over a **Cloudflare quick tunnel** to a Mac mini (`gZeroMacMiniM4`) running uvicorn on `localhost:8000`. This doc captures the full system, both directions of the integration, the infra, the (now-working) bond data + analytics, and the chat UX — as of **2026-05-22**.
 
 ---
 
@@ -83,7 +83,11 @@ Also reachable directly over **Tailscale**: `http://gzeromacminim4:8000` and `ss
 | Why | Keeps the bond pipeline behind one HTTP contract; the agent reuses the same endpoint the frontend uses |
 
 ### 3.4 Wire-format contract (must stay stable)
-The frontend parses `data: {"token":"…"}` lines and stops on `data: [DONE]`. **Any** chat provider (Claude or OpenAI backdoor) must emit this exact shape. `chat_stream_claude` translates Anthropic stream events into these chunks.
+SSE events, terminated by `data: [DONE]`:
+- `data: {"token":"…"}` — answer text (frontend appends + types it out).
+- `data: {"status":"…"}` — live tool-activity pill (e.g. "Pulling bond data", "Crunching the numbers"); frontend shows it with a spinner.
+
+`chat_stream_claude` surfaces only the FINAL answer as a token (pre/inter-tool narration is dropped) plus status events as tools run. The OpenAI backdoor emits token events only.
 
 ---
 
@@ -103,9 +107,14 @@ The frontend parses `data: {"token":"…"}` lines and stops on `data: [DONE]`. *
 | `mcp__smile__extract_keywords` | `brain.extract_keywords` (KeyBERT) | OK |
 | `mcp__smile__document_qa` | `brain.document_qa` (RoBERTa) | ⚠️ see §8 (transformers v5) |
 | `mcp__smile__summarize` | `brain.summarize` (BART) | OK |
-| `mcp__smile__analyze_bond` | self-call `/api/analyze-bond` | ⚠️ data source dead — honest-fix applied (§7) |
+| `mcp__smile__analyze_bond` | self-call `/api/analyze-bond` | ✅ real corporate data (§7) |
+| `mcp__smile__list_bonds` | self-call `/api/list-bonds` | ✅ lists real Local IDs (+ issuer aliases) |
+| `mcp__smile__bond_stats` | self-call `/api/bond-stats` → `bonds/analytics.py` | ✅ summary, correlation, variance, trend |
 
-Skill `skills/bond-data-collector/SKILL.md` auto-loads via `setting_sources=["project"]`.
+Three skills auto-load via `setting_sources=["project"]`:
+- `skills/bond-data-collector/SKILL.md` — fetch a bond / list bonds (`analyze_bond`, `list_bonds`).
+- `skills/bond-analyst/SKILL.md` — statistics (`bond_stats`): correlation, variance, yield-curve trend.
+- `skills/bond-strategist/SKILL.md` — build a plan (ladder/barbell/income pick) from data + stats.
 
 ---
 
@@ -167,35 +176,35 @@ curl -s -X POST http://localhost:8000/api/chat -H 'Content-Type: application/jso
 | Bot protection | **Imperva Incapsula** WAF (`_Incapsula_Resource`) |
 | Net effect | The BeautifulSoup scraper sees no rows → **always 404 `not_found`** for every security |
 
-### 7.2 Honest-agent fix (applied, uncommitted)
+### 7.2 Honest-agent fallback (applied)
+Triggers only when data is genuinely unavailable (government securities, or a true outage):
 | File | Change |
 |---|---|
-| `smile_agent.py` | `analyze_bond` tool: on non-200/error returns `LIVE_BOND_DATA_UNAVAILABLE` instead of a misleading 404 |
-| `skills/bond-data-collector/SKILL.md` | Agent told to say "lookup offline", never estimate figures, no data table |
-| Verified | Chat for `FXTN 10-65` → "data source temporarily offline… I won't guess at numbers" + general context, zero invented numbers |
+| `smile_agent.py` | `analyze_bond`: 404 → `BOND_NOT_FOUND` (agent calls `list_bonds` to show real IDs); other errors → `LIVE_BOND_DATA_UNAVAILABLE` (never fabricate figures) |
+| `skills/bond-data-collector/SKILL.md` | Never estimate; for not-found, list real options instead |
 
-### 7.3 Real fix path (downloadable PDFs on public S3 — bypasses the WAF)
-Source page: `https://www.pds.com.ph/downloadable-reports/` → files on `pdswordpressbucket.s3.ap-southeast-1.amazonaws.com`.
+### 7.3 Real fix — IMPLEMENTED (downloadable PDFs on public S3, bypasses the WAF)
+Corporate bonds now return **real data**. Source page `https://www.pds.com.ph/downloadable-reports/` → files on `pdswordpressbucket.s3.ap-southeast-1.amazonaws.com` (no WAF, plain `httpx`).
 
 | Report | Cadence | Fields | Use |
 |---|---|---|---|
 | `Corporate-Board-Summary-Price-as-of-<date>` | Month-end (latest **Apr 30 2026**) | Local ID, ISIN, CPN, YRS, Maturity, Last/Bid/Offer/Close Price, Vol | Corporate price |
 | `Corporate-Board-Summary-Yield-as-of-<date>` | Month-end | yields | Corporate yield |
-| `PDEx-Trade-Summary-as-of-<date>` | **Daily** (latest **May 21 2026**) | per-ticker **volume only** | Volume/activity |
+| `PDEx-Trade-Summary-as-of-<date>` | **Daily** | per-ticker **volume only** | Volume/activity |
 | `GS-Volume-Turnover` | Monthly | government **volume only** | — |
 
-Proposed implementation (replaces HTML scraper in `bonds/sources/`):
-1. Scrape `downloadable-reports` → latest Price + Yield PDF URLs.
-2. Download from S3 (plain `httpx`, no WAF).
-3. `pdfplumber` parse → match row by Local ID / ISIN.
-4. Map → `BondAnalysis`, cache.
+Implementation (live in `bonds/sources/pds_corporate.py`, `bonds/analytics.py`):
+1. `_load_board()` scrapes `downloadable-reports` → latest Price + Yield PDFs, downloads from S3, parses with `pdfplumber` (6h in-process cache).
+2. `fetch_analysis(security_id)` matches a row by Local ID / ISIN → builds `BondAnalysis` deterministically (no LLM). Router branches corporate → this; government → old normalize path.
+3. `list_securities()` powers `/api/list-bonds` (+ issuer aliases: Ayala→ALI/AC, etc.).
+4. `compute_stats()` powers `/api/bond-stats` (summary, Pearson correlation, variance, linear trend/yield-curve, by-issuer).
 
 | Caveat | Note |
 |---|---|
 | Cadence | Board Summary is **month-end**, not intraday |
-| Coverage | Corporate confirmed; **government (FXTN/RTB) price/yield not in the downloadable set** (only volume) |
+| Coverage | Corporate works; **government (FXTN/RTB) price/yield still unavailable** (downloads have volume only) → falls back to §7.2 |
 | Rating | **Not in PDS** at all — needs a separate source |
-| New dep | `pdfplumber` (installed into the venv; not yet in `requirements.txt`) |
+| Dep | `pdfplumber` (in `requirements.txt`) |
 
 ---
 
@@ -203,13 +212,23 @@ Proposed implementation (replaces HTML scraper in `bonds/sources/`):
 
 | # | Item | Severity | Status |
 |---|---|---|---|
-| 1 | `/api/analyze` & `/api/qa` 500 — `transformers` v5 dropped the `question-answering` pipeline | High | Pending — pin `transformers<5`, reinstall, restart |
-| 2 | Chat replies **glue pre-tool narration** to the answer ("…tool first.I tried…") — `chat_stream_claude` yields text from every assistant msg incl. the one with the `ToolUseBlock` | Med | Pending — skip messages containing a `ToolUseBlock` |
-| 3 | Over-explained replies (repeated bullet menus) | Med | Pending — tighten `prompt/base.txt` |
-| 4 | Bond data source dead | High | Honest-fix applied (§7.2); real PDF fix scoped (§7.3) |
-| 5 | Quick tunnel URL is ephemeral | Med | Pending — named tunnel |
-| 6 | Public greenfy.ai still on old URL | High | Pending — Lovable env + redeploy |
-| 7 | API invocation logger/dashboard | Low | Requested, not built (pure-ASGI middleware + `/dashboard`) |
+| 1 | `/api/analyze` & `/api/qa` 500 — `transformers` v5 dropped the `question-answering` pipeline | High | **Pending** — pin `transformers<5`, reinstall, restart |
+| 2 | Government (FXTN/RTB) price/yield unavailable (no PDS download source) | Med | Open — needs alt source or headless render; falls back to §7.2 |
+| 3 | Credit ratings absent (not in PDS) | Low | Open — needs a separate source |
+| 4 | Quick tunnel URL is ephemeral | Med | Pending — named tunnel for stable hostname |
+| 5 | API invocation logger/dashboard | Low | Requested, not built |
+| — | ~~Bond data source dead~~ | — | ✅ Fixed (§7.3) — corporate returns real data |
+| — | ~~Glued pre-tool narration~~ | — | ✅ Fixed — `chat_stream_claude` surfaces only the final answer |
+| — | ~~Over-explained / capability pitches / trailing offers~~ | — | ✅ Fixed — `base.txt` buddy tone + readability + no-offer rules |
+| — | ~~Public greenfy.ai on old URL~~ | — | ✅ Fixed — redeployed |
+
+### Chat UX shipped (Greenfy frontend)
+| Feature | Detail |
+|---|---|
+| Markdown rendering | `ChatMarkdown` (react-markdown + remark-gfm) — tables/bold/lists render |
+| Controls (top-center of bubble) | clear (eraser) · pin (stay open) · enlarge (maximize) · close — desktop + mobile |
+| Status pills | renders `{"status":…}` SSE events live ("Pulling bond data"…) |
+| Greeting | buddy one-liner, types out on every open (no question/offer) |
 
 ---
 
@@ -217,13 +236,15 @@ Proposed implementation (replaces HTML scraper in `bonds/sources/`):
 
 | File | Role |
 |---|---|
-| `server.py` | FastAPI app + routes + CORS |
-| `smile_agent.py` | Claude Agent SDK path: 4 `@tool`s, MCP server, `chat_stream_claude` |
+| `server.py` | FastAPI app + routes + CORS; `/api/chat` emits token/status SSE events |
+| `smile_agent.py` | Claude Agent SDK path: 6 `@tool`s, MCP server, `chat_stream_claude` (final-answer-only + status events), `_TOOL_LABELS` pill map |
 | `brain.py` | OpenAI backdoor + HF helpers (KeyBERT/RoBERTa/BART) |
-| `bonds/router.py` | `/api/analyze-bond` |
-| `bonds/sources/pds_*.py` | PDS adapters (HTML scraper — **broken**, see §7) |
+| `bonds/router.py` | `/api/analyze-bond`, `/api/list-bonds`, `/api/bond-stats` |
+| `bonds/sources/pds_corporate.py` | **Real** corporate data — Board Summary PDF parser + `list_securities` + issuer aliases |
+| `bonds/sources/pds_government.py` | Government HTML scraper (no live data — falls back to §7.2) |
+| `bonds/analytics.py` | `compute_stats` — summary, correlation, variance, trend, by-issuer |
 | `bonds/{cache,normalize,schema}.py` | Bond pipeline internals |
-| `prompt/base.txt` | System prompt (chat) |
-| `skills/bond-data-collector/SKILL.md` | Bond workflow skill |
+| `prompt/base.txt` | System prompt — buddy tone, readability, no-offer, tabular, bond rules |
+| `skills/bond-data-collector/`, `bond-analyst/`, `bond-strategist/` | The three bond skills |
 | `docs/ARCHITECTURE.md` | SDK conversion blueprint |
 | `docs/SMILE_GREENFY_INTEGRATION.md` | This file |
