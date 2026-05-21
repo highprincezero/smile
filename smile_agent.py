@@ -139,12 +139,49 @@ async def bond_stats(args: dict) -> dict:
         return {"content": [{"type": "text", "text": f"LIVE_BOND_DATA_UNAVAILABLE: {e}"}]}
 
 
+@tool(
+    "visualize",
+    "Render a Unicode horizontal bar chart from data you ALREADY have in this conversation "
+    "(e.g. figures from a prior bond_stats / list_bonds / strategy step, or the user's "
+    "uploaded file). Do NOT re-fetch or re-run analysis — just pass the numbers you already "
+    "computed. `data` is newline-separated 'label = value' rows (value numeric, % ok). "
+    "Use ONLY when the user explicitly asks to visualize / chart / plot / graph.",
+    {"title": str, "data": str},
+)
+async def visualize(args: dict) -> dict:
+    rows = []
+    for line in (args.get("data") or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        sep = "=" if "=" in line else ("," if "," in line else None)
+        if not sep:
+            continue
+        label, _, val = line.rpartition(sep)
+        try:
+            v = float(val.strip().rstrip("%").replace(",", ""))
+        except ValueError:
+            continue
+        rows.append((label.strip(), v))
+    if not rows:
+        return {"content": [{"type": "text", "text": "VISUALIZE_NO_DATA: pass 'label = value' lines."}]}
+    width = 20
+    mx = max(v for _, v in rows) or 1.0
+    lab_w = max(len(l) for l, _ in rows)
+    out = [args.get("title", "Chart"), ""]
+    for label, v in rows:
+        n = max(0, min(width, round(width * v / mx)))
+        out.append(f"{label.ljust(lab_w)}  {'█' * n}{'░' * (width - n)}  {v:g}")
+    chart = "```\n" + "\n".join(out) + "\n```"
+    return {"content": [{"type": "text", "text": chart}]}
+
+
 # ───────── Bundle as SDK MCP server ─────────
 
 smile_tools = create_sdk_mcp_server(
     name="smile_tools",
     version="1.0.0",
-    tools=[extract_keywords, document_qa, summarize, analyze_bond, list_bonds, bond_stats],
+    tools=[extract_keywords, document_qa, summarize, analyze_bond, list_bonds, bond_stats, visualize],
 )
 
 
@@ -161,6 +198,7 @@ options = ClaudeAgentOptions(
         "mcp__smile__analyze_bond",
         "mcp__smile__list_bonds",
         "mcp__smile__bond_stats",
+        "mcp__smile__visualize",
     ],
     setting_sources=["project"],  # auto-discovers ./skills/
 )
@@ -173,6 +211,7 @@ _TOOL_LABELS = {
     "mcp__smile__analyze_bond": "Pulling bond data",
     "mcp__smile__list_bonds": "Fetching bond listings",
     "mcp__smile__bond_stats": "Crunching the numbers",
+    "mcp__smile__visualize": "Visualizing",
     "mcp__smile__summarize": "Summarizing",
     "mcp__smile__extract_keywords": "Extracting keywords",
     "mcp__smile__document_qa": "Reading the document",
