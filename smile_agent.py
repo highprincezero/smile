@@ -183,16 +183,27 @@ def _tool_label(name: str) -> str:
     return _TOOL_LABELS.get(name, "Working")
 
 
-async def chat_stream_claude(messages: list[dict]):
+async def chat_stream_claude(messages: list[dict], attachment: dict | None = None):
     """Yield SSE event dicts: {"status": "..."} for tool activity (status pills) and
     a final {"token": "..."} with the answer. server.py json-dumps each as one
     `data: {...}` line. Only the final answer is surfaced as text — pre/inter-tool
-    narration is dropped — while tool calls surface as live status pills."""
+    narration is dropped — while tool calls surface as live status pills.
+
+    `attachment` ({name, text}) is a user-uploaded file injected as extra context."""
     if not messages:
         return
     user_text = messages[-1].get("text", "")
-    if not user_text:
+    if not user_text and not (attachment and attachment.get("text")):
         return
+    if attachment and attachment.get("text"):
+        user_text = (
+            f"The user uploaded a file named '{attachment.get('name', 'file')}'. Treat its "
+            f"contents below as ADDITIONAL data to use alongside your tools — compare it "
+            f"against live PDS bond data, compute trends/correlations, or analyze as asked. "
+            f"Be clear about which figures come from the user's file vs. PDS.\n\n"
+            f"--- FILE CONTENT ---\n{attachment['text']}\n--- END FILE ---\n\n"
+            f"User message: {user_text or '(analyze the attached file)'}"
+        )
     answer: list[str] = []
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_text)

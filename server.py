@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import brain  # smile-agent brain
+import fileio
 from bonds.router import router as bonds_router
 from smile_agent import chat_stream_claude
 
@@ -34,14 +35,24 @@ app.add_middleware(
 API_KEY = os.getenv("OPENAI_API_KEY")
 
 
+@app.post("/api/extract-file")
+async def extract_file(file: UploadFile = File(...)):
+    """Parse an uploaded file (PDF / CSV / text) to plain text the chat can attach."""
+    raw = await file.read()
+    text = fileio.extract_text(file.filename or "upload", raw)
+    return {"name": file.filename or "upload", "text": text, "chars": len(text)}
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
-    """Chat via Claude Agent SDK (primary path) — streams response via SSE."""
+    """Chat via Claude Agent SDK (primary path) — streams response via SSE.
+    Optional `attachment` ({name, text}) supplies a user-uploaded file as context."""
     body = await request.json()
     messages = body.get("messages", [])
+    attachment = body.get("attachment")
 
     async def generate():
-        async for event in chat_stream_claude(messages):
+        async for event in chat_stream_claude(messages, attachment=attachment):
             yield f"data: {json.dumps(event)}\n\n"
         yield "data: [DONE]\n\n"
 
