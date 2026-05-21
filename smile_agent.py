@@ -175,27 +175,22 @@ async def chat_stream_claude(messages: list[dict]):
     user_text = messages[-1].get("text", "")
     if not user_text:
         return
-    # Suppress pre-tool narration ("let me load the tool…"): buffer any text that
-    # arrives before a tool call; once a tool runs, discard that buffer and stream
-    # only the real post-tool answer. If no tool is ever used, the buffered text IS
-    # the answer, so flush it at the end.
-    pre_tool: list[str] = []
-    tool_used = False
+    # Only surface the FINAL answer. Claude emits "thinking out loud" text before
+    # and between tool calls ("let me load the tool…", tool-arg retries). Accumulate
+    # assistant text and reset the buffer every time a tool runs, so only the text
+    # after the last tool call survives. Flush once at the end.
+    answer: list[str] = []
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_text)
         async for msg in client.receive_response():
             blocks = getattr(msg, "content", []) or []
             if any(type(b).__name__ == "ToolUseBlock" for b in blocks):
-                tool_used = True
-                pre_tool.clear()
+                answer.clear()  # discard narration / retries before & between tools
                 continue
             for block in blocks:
                 text = getattr(block, "text", None)
-                if not text:
-                    continue
-                if tool_used:
-                    yield text
-                else:
-                    pre_tool.append(text)
-    if not tool_used and pre_tool:
-        yield "".join(pre_tool)
+                if text:
+                    answer.append(text)
+    final = "".join(answer)
+    if final:
+        yield final
