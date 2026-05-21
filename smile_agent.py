@@ -67,12 +67,76 @@ async def summarize(args: dict) -> dict:
     {"security_id": str, "type": str},
 )
 async def analyze_bond(args: dict) -> dict:
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        resp = await http.post(
-            f"{_SELF_BASE}/api/analyze-bond",
-            json={"security_id": args["security_id"], "type": args["type"]},
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.post(
+                f"{_SELF_BASE}/api/analyze-bond",
+                json={"security_id": args["security_id"], "type": args["type"]},
+            )
+        status, body = resp.status_code, resp.text
+    except Exception as e:
+        status, body = None, str(e)
+
+    if status == 200:
+        return {"content": [{"type": "text", "text": body}]}
+
+    if status == 404:
+        msg = (
+            "BOND_NOT_FOUND: no security matched that ID in the PDS Corporate Board "
+            "Summary. Do NOT guess or invent an ID. Call the list_bonds tool (pass the "
+            "issuer name as query if known) to get the REAL available Local IDs, show "
+            "them to the user in a table, and ask them to pick one."
         )
-    return {"content": [{"type": "text", "text": resp.text}]}
+        return {"content": [{"type": "text", "text": msg}]}
+
+    msg = (
+        "LIVE_BOND_DATA_UNAVAILABLE: the bond data source cannot be reached right now. "
+        "Tell the user live bond data lookup is temporarily offline. Do NOT invent or "
+        "estimate any figures; you may still explain the bond type in general terms."
+    )
+    return {"content": [{"type": "text", "text": msg}]}
+
+
+@tool(
+    "list_bonds",
+    "List available corporate bonds (with their REAL PDS Local IDs) optionally filtered "
+    "by issuer or keyword. ALWAYS call this when the user asks generally about bonds, "
+    "asks 'what can I look at', or names an issuer (e.g. 'Ayala') — so you present real "
+    "security IDs instead of guessing.",
+    {"query": str},
+)
+async def list_bonds(args: dict) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.get(
+                f"{_SELF_BASE}/api/list-bonds",
+                params={"type": "corporate", "query": args.get("query", "")},
+            )
+        return {"content": [{"type": "text", "text": resp.text}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": f"LIVE_BOND_DATA_UNAVAILABLE: {e}"}]}
+
+
+@tool(
+    "bond_stats",
+    "Compute REAL statistical analysis over the corporate bond market: summary stats "
+    "(mean/median/stdev/variance/min/max for coupon, tenor, yield, price), Pearson "
+    "correlations (coupon~tenor, coupon~yield, tenor~yield), linear trend / yield-curve "
+    "slope, and per-issuer aggregates. Pass an issuer/keyword to scope it, or omit for "
+    "the whole market. Use this whenever the user asks for correlation, variance, "
+    "dispersion, trend, the yield curve, or any quantitative comparison of bonds.",
+    {"issuer": str},
+)
+async def bond_stats(args: dict) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=40.0) as http:
+            resp = await http.get(
+                f"{_SELF_BASE}/api/bond-stats",
+                params={"issuer": args.get("issuer", "")},
+            )
+        return {"content": [{"type": "text", "text": resp.text}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": f"LIVE_BOND_DATA_UNAVAILABLE: {e}"}]}
 
 
 # ───────── Bundle as SDK MCP server ─────────
@@ -80,7 +144,7 @@ async def analyze_bond(args: dict) -> dict:
 smile_tools = create_sdk_mcp_server(
     name="smile_tools",
     version="1.0.0",
-    tools=[extract_keywords, document_qa, summarize, analyze_bond],
+    tools=[extract_keywords, document_qa, summarize, analyze_bond, list_bonds, bond_stats],
 )
 
 
@@ -95,6 +159,8 @@ options = ClaudeAgentOptions(
         "mcp__smile__document_qa",
         "mcp__smile__summarize",
         "mcp__smile__analyze_bond",
+        "mcp__smile__list_bonds",
+        "mcp__smile__bond_stats",
     ],
     setting_sources=["project"],  # auto-discovers ./skills/
 )
@@ -109,10 +175,27 @@ async def chat_stream_claude(messages: list[dict]):
     user_text = messages[-1].get("text", "")
     if not user_text:
         return
+    # Suppress pre-tool narration ("let me load the tool…"): buffer any text that
+    # arrives before a tool call; once a tool runs, discard that buffer and stream
+    # only the real post-tool answer. If no tool is ever used, the buffered text IS
+    # the answer, so flush it at the end.
+    pre_tool: list[str] = []
+    tool_used = False
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_text)
         async for msg in client.receive_response():
-            for block in getattr(msg, "content", []) or []:
+            blocks = getattr(msg, "content", []) or []
+            if any(type(b).__name__ == "ToolUseBlock" for b in blocks):
+                tool_used = True
+                pre_tool.clear()
+                continue
+            for block in blocks:
                 text = getattr(block, "text", None)
-                if text:
+                if not text:
+                    continue
+                if tool_used:
                     yield text
+                else:
+                    pre_tool.append(text)
+    if not tool_used and pre_tool:
+        yield "".join(pre_tool)

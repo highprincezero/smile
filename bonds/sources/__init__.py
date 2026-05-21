@@ -1,13 +1,12 @@
 """
-Source adapters. Each adapter exposes:
+Source adapters.
 
-    async def fetch_snippet(security_id: str) -> SourceResult
-
-returning the smallest HTML/text fragment containing the security's row,
-plus the resolved source URL. The normalizer takes it from there.
+- Government: `fetch_government(security_id) -> SourceResult` (HTML snippet → LLM normalize).
+- Corporate:  `fetch_corporate_analysis(security_id) -> BondAnalysis` (PDS Board Summary
+  PDFs parsed deterministically — no LLM normalization).
 """
 
 from .pds_government import fetch_snippet as fetch_government
-from .pds_corporate import fetch_snippet as fetch_corporate
+from .pds_corporate import fetch_analysis as fetch_corporate_analysis
 
-__all__ = ["fetch_government", "fetch_corporate"]
+__all__ = ["fetch_government", "fetch_corporate_analysis"]
