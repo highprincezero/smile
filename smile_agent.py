@@ -246,7 +246,7 @@ _TOOL_LABELS = {
 
 
 def _tool_label(name: str) -> str:
-    return _TOOL_LABELS.get(name, "Working")
+    return _TOOL_LABELS.get(name, "Processing")
 
 
 async def chat_stream_claude(messages: list[dict], attachment: dict | None = None):
