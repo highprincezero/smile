@@ -9,8 +9,12 @@ import re
 
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
+from fpdf.fonts import FontFace
 
-_GREEN = (34, 197, 94)
+_GREEN = (34, 197, 94)            # chart bars
+_HEAD_FILL = (224, 244, 233)      # light green table header
+_HEAD_TEXT = (22, 78, 52)         # dark green header text
+_ROW_FILL = (244, 250, 247)       # very light zebra row
 
 
 def _latin1(s: str) -> str:
@@ -63,7 +67,15 @@ def _draw_table(pdf: FPDF, rows: list[list[str]], heading: bool) -> None:
     ncol = max(len(r) for r in rows)
     rows = [r + [""] * (ncol - len(r)) for r in rows]  # pad ragged rows
     pdf.set_font("Helvetica", "", 8)
-    with pdf.table(borders_layout="ALL", text_align="LEFT", first_row_as_headings=heading) as table:
+    pdf.set_text_color(20, 20, 20)
+    pdf.set_fill_color(255, 255, 255)  # avoid inheriting the chart's green fill
+    with pdf.table(
+        borders_layout="ALL",
+        text_align="LEFT",
+        first_row_as_headings=heading,
+        headings_style=FontFace(emphasis="BOLD", color=_HEAD_TEXT, fill_color=_HEAD_FILL),
+        cell_fill_mode="NONE",
+    ) as table:
         for r in rows:
             row = table.row()
             for cell in r:
@@ -85,8 +97,18 @@ def _render_body(pdf: FPDF, text: str) -> None:
                 i += 1
             _draw_table(pdf, block, heading=had_sep)
         else:
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 5, _latin1(lines[i]) if lines[i].strip() else " ",
+            raw = lines[i].strip()
+            if raw.startswith("### "):
+                pdf.set_font("Helvetica", "B", 11); raw = raw[4:]
+            elif raw.startswith("## "):
+                pdf.set_font("Helvetica", "B", 13); raw = raw[3:]
+            elif raw.startswith("# "):
+                pdf.set_font("Helvetica", "B", 15); raw = raw[2:]
+            else:
+                pdf.set_font("Helvetica", "", 10)
+            raw = raw.replace("**", "")  # drop inline bold markers
+            pdf.set_text_color(20, 20, 20)
+            pdf.multi_cell(0, 6, _latin1(raw) if raw else " ",
                            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             i += 1
 
