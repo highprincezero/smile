@@ -7,9 +7,11 @@ Expose:    ngrok http 8000  (or cloudflare tunnel)
 
 import os
 import json
+import secrets
+from collections import OrderedDict
 
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -33,6 +35,39 @@ app.add_middleware(
 )
 
 API_KEY = os.getenv("OPENAI_API_KEY")
+
+
+# In-memory export store (last 100), for download links the chat hands the user.
+_EXPORTS: "OrderedDict[str, dict]" = OrderedDict()
+_EXPORT_MIME = {"csv": "text/csv", "md": "text/markdown", "txt": "text/plain", "json": "application/json"}
+
+
+@app.post("/api/export")
+async def make_export(request: Request):
+    """Store content for download; return a relative path the chat embeds as a link."""
+    body = await request.json()
+    fmt = (body.get("format") or "txt").lower()
+    eid = secrets.token_urlsafe(8)
+    _EXPORTS[eid] = {
+        "filename": body.get("filename") or f"export.{fmt}",
+        "content": (body.get("content") or "")[:500_000],
+        "mime": _EXPORT_MIME.get(fmt, "text/plain"),
+    }
+    while len(_EXPORTS) > 100:
+        _EXPORTS.popitem(last=False)
+    return {"path": f"/api/download/{eid}", "filename": _EXPORTS[eid]["filename"]}
+
+
+@app.get("/api/download/{export_id}")
+async def download(export_id: str):
+    item = _EXPORTS.get(export_id)
+    if not item:
+        return JSONResponse(status_code=404, content={"error": "not found or expired"})
+    return Response(
+        content=item["content"],
+        media_type=item["mime"],
+        headers={"Content-Disposition": f'attachment; filename="{item["filename"]}"'},
+    )
 
 
 @app.post("/api/extract-file")

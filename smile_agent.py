@@ -176,12 +176,37 @@ async def visualize(args: dict) -> dict:
     return {"content": [{"type": "text", "text": chart}]}
 
 
+@tool(
+    "export",
+    "Create a downloadable file from data the user asked to EXPORT/download. Reuse data "
+    "already in the conversation — do NOT re-fetch. `format` is csv|md|txt|json; `content` "
+    "is the full file body (for csv use comma-separated rows with a header); `filename` e.g. "
+    "'bonds.csv'. Returns a download path — embed it in your reply as a markdown link "
+    "[filename](path). Use ONLY when the user asks to export/download/save.",
+    {"filename": str, "format": str, "content": str},
+)
+async def export(args: dict) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.post(
+                f"{_SELF_BASE}/api/export",
+                json={
+                    "filename": args.get("filename", "export.txt"),
+                    "format": args.get("format", "txt"),
+                    "content": args.get("content", ""),
+                },
+            )
+        return {"content": [{"type": "text", "text": resp.text}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": f"EXPORT_FAILED: {e}"}]}
+
+
 # ───────── Bundle as SDK MCP server ─────────
 
 smile_tools = create_sdk_mcp_server(
     name="smile_tools",
     version="1.0.0",
-    tools=[extract_keywords, document_qa, summarize, analyze_bond, list_bonds, bond_stats, visualize],
+    tools=[extract_keywords, document_qa, summarize, analyze_bond, list_bonds, bond_stats, visualize, export],
 )
 
 
@@ -199,6 +224,7 @@ options = ClaudeAgentOptions(
         "mcp__smile__list_bonds",
         "mcp__smile__bond_stats",
         "mcp__smile__visualize",
+        "mcp__smile__export",
     ],
     setting_sources=["project"],  # auto-discovers ./skills/
 )
@@ -212,6 +238,7 @@ _TOOL_LABELS = {
     "mcp__smile__list_bonds": "Fetching bond listings",
     "mcp__smile__bond_stats": "Crunching the numbers",
     "mcp__smile__visualize": "Visualizing",
+    "mcp__smile__export": "Preparing download",
     "mcp__smile__summarize": "Summarizing",
     "mcp__smile__extract_keywords": "Extracting keywords",
     "mcp__smile__document_qa": "Reading the document",
@@ -243,6 +270,21 @@ async def chat_stream_claude(messages: list[dict], attachment: dict | None = Non
             f"--- FILE CONTENT ---\n{attachment['text']}\n--- END FILE ---\n\n"
             f"User message: {user_text or '(analyze the attached file)'}"
         )
+
+    # Multi-turn context: the frontend sends the full message list, but each request
+    # opens a fresh SDK session — so fold the prior turns into the prompt. Without this
+    # the agent can't resolve follow-ups like "which month is this from?".
+    history = messages[:-1][-10:]  # last few turns
+    convo = "\n".join(
+        f"{'User' if m.get('role') == 'user' else 'Assistant'}: {(m.get('text') or '').strip()[:1500]}"
+        for m in history if (m.get("text") or "").strip()
+    )
+    if convo:
+        user_text = (
+            f"Conversation so far (for context):\n{convo}\n\n"
+            f"---\nNow answer the user's latest message:\n{user_text}"
+        )
+
     answer: list[str] = []
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_text)
