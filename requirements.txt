@@ -19,6 +19,7 @@ httpx
 beautifulsoup4
 cachetools
 pdfplumber
+fpdf2
 
 # Claude Agent SDK (primary chat path)
 claude-agent-sdk

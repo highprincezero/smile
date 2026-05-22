@@ -179,11 +179,14 @@ async def visualize(args: dict) -> dict:
 @tool(
     "export",
     "Create a downloadable file from data the user asked to EXPORT/download. Reuse data "
-    "already in the conversation — do NOT re-fetch. `format` is csv|md|txt|json; `content` "
-    "is the full file body (for csv use comma-separated rows with a header); `filename` e.g. "
-    "'bonds.csv'. Returns a download path — embed it in your reply as a markdown link "
-    "[filename](path). Use ONLY when the user asks to export/download/save.",
-    {"filename": str, "format": str, "content": str},
+    "already in the conversation — do NOT re-fetch. DEFAULT to format='pdf' (a report). "
+    "ALWAYS pass `chart` when a chart was shown or is relevant — it's rendered into the PDF "
+    "as real bars. `chart` = 'label = value' lines (numeric values, same as the visualize "
+    "tool). `content` = the analysis/table text to include. `filename` e.g. 'bonds.pdf'. "
+    "Other formats: csv|md|txt|json (content only). Returns a download path — embed it in "
+    "your reply as a markdown link [filename](path). Use ONLY when the user asks to "
+    "export/download/save.",
+    {"filename": str, "format": str, "content": str, "chart": str},
 )
 async def export(args: dict) -> dict:
     try:
@@ -191,9 +194,11 @@ async def export(args: dict) -> dict:
             resp = await http.post(
                 f"{_SELF_BASE}/api/export",
                 json={
-                    "filename": args.get("filename", "export.txt"),
-                    "format": args.get("format", "txt"),
+                    "filename": args.get("filename", "export.pdf"),
+                    "format": args.get("format", "pdf"),
+                    "title": args.get("filename", "Smile Export"),
                     "content": args.get("content", ""),
+                    "chart": args.get("chart", ""),
                 },
             )
         return {"content": [{"type": "text", "text": resp.text}]}

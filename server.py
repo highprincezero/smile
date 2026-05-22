@@ -19,6 +19,7 @@ load_dotenv()
 
 import brain  # smile-agent brain
 import fileio
+import pdfgen
 from bonds.router import router as bonds_router
 from smile_agent import chat_stream_claude
 
@@ -44,18 +45,28 @@ _EXPORT_MIME = {"csv": "text/csv", "md": "text/markdown", "txt": "text/plain", "
 
 @app.post("/api/export")
 async def make_export(request: Request):
-    """Store content for download; return a relative path the chat embeds as a link."""
+    """Store content for download; return a relative path the chat embeds as a link.
+    format=pdf renders a report (title + bar chart from `chart` + `content` text)."""
     body = await request.json()
     fmt = (body.get("format") or "txt").lower()
     eid = secrets.token_urlsafe(8)
-    _EXPORTS[eid] = {
-        "filename": body.get("filename") or f"export.{fmt}",
-        "content": (body.get("content") or "")[:500_000],
-        "mime": _EXPORT_MIME.get(fmt, "text/plain"),
-    }
+    filename = body.get("filename") or f"export.{fmt}"
+
+    if fmt == "pdf":
+        content = pdfgen.build_pdf(
+            title=body.get("title") or filename,
+            chart=pdfgen.parse_chart(body.get("chart") or ""),
+            body_text=(body.get("content") or "")[:200_000],
+        )
+        mime = "application/pdf"
+    else:
+        content = (body.get("content") or "")[:500_000].encode("utf-8")
+        mime = _EXPORT_MIME.get(fmt, "text/plain")
+
+    _EXPORTS[eid] = {"filename": filename, "content": content, "mime": mime}
     while len(_EXPORTS) > 100:
         _EXPORTS.popitem(last=False)
-    return {"path": f"/api/download/{eid}", "filename": _EXPORTS[eid]["filename"]}
+    return {"path": f"/api/download/{eid}", "filename": filename}
 
 
 @app.get("/api/download/{export_id}")
