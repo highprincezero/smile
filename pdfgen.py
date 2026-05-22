@@ -1,13 +1,14 @@
-"""Build a simple PDF report (title + bar chart + body text) for chat exports.
+"""Build a simple PDF report (title + bar chart + body) for chat exports.
 
-Uses fpdf2 core fonts (latin-1), so non-latin glyphs (₱, emoji) are sanitized.
-The chart is drawn as horizontal bars from (label, value) rows — so the exported
-PDF visually includes the chart, not just text.
+Renders markdown tables in the body as real PDF tables (not raw `|` pipes), and
+the `chart` rows as horizontal bars. fpdf2 core fonts are latin-1, so non-latin
+glyphs (₱, emoji) are sanitized.
 """
 
 import re
 
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 _GREEN = (34, 197, 94)
 
@@ -15,7 +16,7 @@ _GREEN = (34, 197, 94)
 def _latin1(s: str) -> str:
     if not s:
         return ""
-    s = s.replace("₱", "PHP ")  # ₱
+    s = s.replace("₱", "PHP ")
     return s.encode("latin-1", "ignore").decode("latin-1")
 
 
@@ -36,13 +37,56 @@ def parse_chart(data: str) -> list[tuple[str, float]]:
     return rows
 
 
+def _is_table_row(line: str) -> bool:
+    return line.strip().startswith("|") and line.strip().endswith("|")
+
+
+def _is_separator(line: str) -> bool:
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    return bool(cells) and all(re.fullmatch(r":?-{2,}:?", c) for c in cells)
+
+
+def _split_row(line: str) -> list[str]:
+    return [_latin1(c.strip()) for c in line.strip().strip("|").split("|")]
+
+
+def _draw_table(pdf: FPDF, rows: list[list[str]]) -> None:
+    pdf.set_font("Helvetica", "", 8)
+    with pdf.table(borders_layout="ALL", text_align="LEFT", first_row_as_headings=True) as table:
+        for r in rows:
+            row = table.row()
+            for cell in r:
+                row.cell(cell)
+    pdf.ln(2)
+
+
+def _render_body(pdf: FPDF, text: str) -> None:
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _is_table_row(line) and i + 1 < len(lines) and _is_separator(lines[i + 1]):
+            rows = [_split_row(line)]
+            j = i + 2
+            while j < len(lines) and _is_table_row(lines[j]):
+                rows.append(_split_row(lines[j]))
+                j += 1
+            _draw_table(pdf, rows)
+            i = j
+        else:
+            pdf.set_font("Helvetica", "", 10)
+            pdf.multi_cell(0, 5, _latin1(line) if line.strip() else " ",
+                           new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            i += 1
+
+
 def build_pdf(title: str, chart: list[tuple[str, float]], body_text: str) -> bytes:
     pdf = FPDF(format="A4")
     pdf.set_auto_page_break(True, margin=15)
     pdf.add_page()
 
     pdf.set_font("Helvetica", "B", 16)
-    pdf.multi_cell(0, 9, _latin1(title or "Smile Export"))
+    pdf.multi_cell(0, 9, _latin1(title or "Smile Export"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
     if chart:
@@ -60,7 +104,6 @@ def build_pdf(title: str, chart: list[tuple[str, float]], body_text: str) -> byt
         pdf.ln(4)
 
     if body_text:
-        pdf.set_font("Courier", "", 9)
-        pdf.multi_cell(0, 5, _latin1(body_text))
+        _render_body(pdf, body_text)
 
     return bytes(pdf.output())

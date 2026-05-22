@@ -179,13 +179,13 @@ async def visualize(args: dict) -> dict:
 @tool(
     "export",
     "Create a downloadable file from data the user asked to EXPORT/download. Reuse data "
-    "already in the conversation — do NOT re-fetch. DEFAULT to format='pdf' (a report). "
-    "ALWAYS pass `chart` when a chart was shown or is relevant — it's rendered into the PDF "
-    "as real bars. `chart` = 'label = value' lines (numeric values, same as the visualize "
-    "tool). `content` = the analysis/table text to include. `filename` e.g. 'bonds.pdf'. "
-    "Other formats: csv|md|txt|json (content only). Returns a download path — embed it in "
-    "your reply as a markdown link [filename](path). Use ONLY when the user asks to "
-    "export/download/save.",
+    "already in the conversation — do NOT re-fetch. Use the format the user explicitly asks "
+    "for: csv|md|txt|json (put data in `content`; csv = comma-separated rows with a header). "
+    "If the user does NOT specify a format, default to format='pdf'. For PDF, pass `chart` "
+    "('label = value' lines, same as the visualize tool) when a chart is relevant — it's "
+    "rendered into the PDF as real bars — plus analysis in `content`. `filename` e.g. "
+    "'bonds.csv' or 'report.pdf'. Returns a download path — embed it in your reply as a "
+    "markdown link [filename](path). Use ONLY when the user asks to export/download/save.",
     {"filename": str, "format": str, "content": str, "chart": str},
 )
 async def export(args: dict) -> dict:
