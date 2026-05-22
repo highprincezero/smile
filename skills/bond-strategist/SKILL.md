@@ -7,9 +7,9 @@ description: Use when the user wants a STRATEGY, plan, recommendation, or next a
 
 When the user wants a strategy, recommendation, or next action on bonds, REASON FROM REAL DATA — never strategize from memory or invented numbers.
 
-1. **Gather inputs first** (this is mandatory before recommending anything):
-   - Call `bond_stats` (whole market, or an issuer) for the yield-curve slope, variance/dispersion, and correlations.
-   - Call `list_bonds` (and `analyze_bond` for specific candidates) to get real securities with their Local ID, coupon, maturity, and yield.
+1. **Use data already in the conversation first.** If a listing, stats, or analysis was already pulled earlier this session, REUSE it — do NOT re-call `list_bonds`/`bond_stats` for data you already have. Only fetch what's genuinely missing:
+   - `bond_stats` (market or issuer) for the yield-curve slope / dispersion — only if not already shown.
+   - `list_bonds` / `analyze_bond` for real securities — only if you don't already have them.
 2. **Anchor on the objective.** If the user's goal/horizon/risk appetite is unclear, ask in ONE short line (income vs. capital preservation, time horizon, risk tolerance). If they've given enough, proceed.
 3. **Derive the strategy from the numbers:**
    - Use the `last_yield_vs_tenor` slope from `bond_stats`: clearly upward → extending duration captures term premium; flat/inverted → stay short.
