@@ -162,9 +162,12 @@ def _alias_prefixes(q: str) -> set[str]:
     return prefixes
 
 
-async def list_securities(query: str | None = None, limit: int = 50) -> list[dict]:
+async def list_securities(
+    query: str | None = None, limit: int = 50, green_only: bool = True
+) -> list[dict]:
     """Return available corporate securities (real PDS Local IDs), optionally
-    filtered by issuer/keyword. Lets the agent suggest real IDs instead of guessing."""
+    filtered by issuer/keyword. Platform coverage is GREEN bonds by default;
+    pass green_only=False for the full PDS board (analyst/internal use)."""
     board = await _load_board()
     q = normalize_id(query) if query else None
     prefixes = _alias_prefixes(q) if q else set()
@@ -179,6 +182,8 @@ async def list_securities(query: str | None = None, limit: int = 50) -> list[dic
             continue
         issuer = (p.get("Global ID", "").split() or [""])[0]
         intel = classify(local, issuer)
+        if green_only and intel.theme != "green":
+            continue
         out.append({
             "local_id": local,
             "issuer": issuer,
