@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 import httpx
 import pdfplumber
 
+from ..enrich import classify
 from ..schema import BondAnalysis
 from ._common import SecurityNotFound, SourceFetchError, normalize_id
 
@@ -176,12 +177,19 @@ async def list_securities(query: str | None = None, limit: int = 50) -> list[dic
         hay = normalize_id(" ".join([p.get("Local ID", ""), p.get("Global ID", ""), p.get("ISIN", "")]))
         if q and q not in hay and not any(pref in hay for pref in prefixes):
             continue
+        issuer = (p.get("Global ID", "").split() or [""])[0]
+        intel = classify(local, issuer)
         out.append({
             "local_id": local,
-            "issuer": (p.get("Global ID", "").split() or [""])[0],
+            "issuer": issuer,
             "isin": (p.get("ISIN") if p.get("ISIN") not in ("", "-") else None),
             "coupon": _num(p.get("CPN")),
             "maturity": p.get("Maturity", ""),
+            "sector": intel.sector,
+            "sub_sector": intel.sub_sector,
+            "theme": intel.theme,
+            "taxonomies": intel.taxonomies.model_dump(),
+            "confidence": intel.confidence,
         })
         if len(out) >= limit:
             break
@@ -201,10 +209,12 @@ async def fetch_analysis(security_id: str) -> BondAnalysis:
 
     p, y = match["price"], match["yield"]
     vol_mm = _num(p.get("D. Vol (MM)"))
+    issuer = (p.get("Global ID", "").split() or [None])[0]
     return BondAnalysis(
+        intelligence=classify(p.get("Local ID"), issuer),
         security_id=security_id,
         type="corporate",
-        issuer=(p.get("Global ID", "").split() or [None])[0],
+        issuer=issuer,
         name=p.get("Local ID") or None,
         isin=(p.get("ISIN") if p.get("ISIN") not in ("", "-") else None),
         coupon=_num(p.get("CPN")),

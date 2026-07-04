@@ -10,6 +10,37 @@ from pydantic import BaseModel, Field
 
 SecurityType = Literal["government", "corporate"]
 
+AlignmentStatus = Literal["aligned", "partial", "not_aligned", "unknown"]
+Theme = Literal["green", "social", "sustainability", "transition", "blue", "conventional", "unknown"]
+
+
+class TaxonomyAlignment(BaseModel):
+    """Per-framework alignment verdict for one security."""
+
+    eu: AlignmentStatus = "unknown"
+    cbi_mitigation: AlignmentStatus = "unknown"
+    cbi_resilience: AlignmentStatus = "unknown"
+    ph_sftg: AlignmentStatus = "unknown"
+    asean_gss: AlignmentStatus = "unknown"
+
+
+class BondIntelligence(BaseModel):
+    """Classification + sustainability intelligence layered on top of raw PDS data.
+
+    v1 is deterministic (issuer/programme rules) — every verdict carries a
+    confidence and basis so downstream UIs can label indicative data honestly.
+    """
+
+    sector: Optional[str] = None
+    sub_sector: Optional[str] = None
+    theme: Theme = "unknown"
+    taxonomies: TaxonomyAlignment = Field(default_factory=TaxonomyAlignment)
+    co2_avoided_t: Optional[float] = Field(
+        None, description="Reported tonnes CO2e avoided per year; None unless issuer-published."
+    )
+    confidence: Literal["verified", "indicative", "unknown"] = "unknown"
+    basis: Optional[str] = Field(None, description="Short human-readable rationale for the classification.")
+
 
 class AnalyzeBondRequest(BaseModel):
     security_id: str = Field(..., min_length=1, description="Symbol/name as it appears on PDS, e.g. 'FXTN 10-65'.")
@@ -39,6 +70,10 @@ class BondAnalysis(BaseModel):
 
     trade_date: Optional[date] = None
     volume: Optional[float] = Field(None, description="Face-value volume in PHP.")
+
+    intelligence: Optional[BondIntelligence] = Field(
+        None, description="Sector/theme/taxonomy classification (Intelligence layer)."
+    )
 
     source_url: str
     fetched_at: datetime
