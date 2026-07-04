@@ -99,18 +99,24 @@ async def analyze_bond(args: dict) -> dict:
 
 @tool(
     "list_bonds",
-    "List available corporate bonds (with their REAL PDS Local IDs) optionally filtered "
-    "by issuer or keyword. ALWAYS call this when the user asks generally about bonds, "
-    "asks 'what can I look at', or names an issuer (e.g. 'Ayala') — so you present real "
-    "security IDs instead of guessing.",
+    "List the bonds available on the platform (with their REAL PDS Local IDs). Coverage "
+    "is GREEN-labeled bonds by default — do NOT pass 'green'/'sustainability'/'bond' as "
+    "the query; leave query empty for the full green list, or pass an ISSUER name/ticker "
+    "only (e.g. 'EDC', 'SM Prime') to narrow it. ALWAYS call this when the user asks "
+    "generally about bonds, asks 'what can I look at', or names an issuer — so you "
+    "present real security IDs instead of guessing.",
     {"query": str},
 )
 async def list_bonds(args: dict) -> dict:
+    # Generic theme words would be matched against IDs/ISINs and return nothing —
+    # the platform list is already green-only, so strip them.
+    _GENERIC = {"green", "greens", "sustainability", "sustainable", "esg", "bond", "bonds", "labeled", "label"}
+    query = " ".join(w for w in (args.get("query", "") or "").split() if w.lower() not in _GENERIC)
     try:
         async with httpx.AsyncClient(timeout=30.0) as http:
             resp = await http.get(
                 f"{_SELF_BASE}/api/list-bonds",
-                params={"type": "corporate", "query": args.get("query", "")},
+                params={"type": "corporate", "query": query},
             )
         return {"content": [{"type": "text", "text": resp.text}]}
     except Exception as e:
