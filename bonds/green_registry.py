@@ -23,7 +23,7 @@ from .sources._common import normalize_id
 LISTING_PAGE = "https://www.pds.com.ph/listing-and-enrollment/"
 _PDF_RE = r"https://pdswordpressbucket[^\"']*Listed-Securities-Database[^\"']*\.pdf"
 _HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": LISTING_PAGE}
-_TTL = 24 * 3600  # database is updated ~daily/monthly; once a day is plenty
+_TTL = 6 * 3600  # PDS Listed Securities DB updates ~daily; refresh a few times a day
 
 _cache: dict = {"ts": 0.0, "as_of": None, "source_url": None, "ids": set(), "detail": {}}
 _lock = asyncio.Lock()

@@ -24,7 +24,7 @@ from ._common import SecurityNotFound, SourceFetchError, normalize_id
 
 REPORTS_PAGE = "https://www.pds.com.ph/downloadable-reports/"
 _HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.pds.com.ph/"}
-_TTL_SECONDS = 6 * 3600  # board summary is month-end; refresh a few times a day is plenty
+_TTL_SECONDS = 1 * 3600  # board summary is month-end; hourly refresh keeps it current cheaply
 
 # Module-level cache of the parsed board so we don't re-download the PDFs per lookup.
 _cache: dict = {"ts": 0.0, "date": None, "source_url": None, "rows": []}
