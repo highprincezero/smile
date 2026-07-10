@@ -18,6 +18,7 @@ import httpx
 import pdfplumber
 
 from ..enrich import classify
+from ..green_registry import green_detail, green_ids
 from ..schema import BondAnalysis
 from ._common import SecurityNotFound, SourceFetchError, normalize_id
 
@@ -163,12 +164,13 @@ def _alias_prefixes(q: str) -> set[str]:
 
 
 async def list_securities(
-    query: str | None = None, limit: int = 50, green_only: bool = True
+    query: str | None = None, limit: int = 500, green_only: bool = False
 ) -> list[dict]:
-    """Return available corporate securities (real PDS Local IDs), optionally
-    filtered by issuer/keyword. Platform coverage is GREEN bonds by default;
-    pass green_only=False for the full PDS board (analyst/internal use)."""
+    """Return corporate securities (real PDS Local IDs). Returns ALL bonds by
+    default, each carrying a `green` flag (authoritative, from the PDS Listed
+    Securities Database). Pass green_only=True to filter to green only."""
     board = await _load_board()
+    greens = await green_ids()
     q = normalize_id(query) if query else None
     prefixes = _alias_prefixes(q) if q else set()
     out: list[dict] = []
@@ -181,8 +183,9 @@ async def list_securities(
         if q and q not in hay and not any(pref in hay for pref in prefixes):
             continue
         issuer = (p.get("Global ID", "").split() or [""])[0]
-        intel = classify(local, issuer)
-        if green_only and intel.theme != "green":
+        intel = classify(local, issuer, green_ids=greens, green_issue=await green_detail(local))
+        is_green = intel.theme == "green"
+        if green_only and not is_green:
             continue
         out.append({
             "local_id": local,
@@ -193,6 +196,7 @@ async def list_securities(
             "sector": intel.sector,
             "sub_sector": intel.sub_sector,
             "theme": intel.theme,
+            "green": is_green,
             "taxonomies": intel.taxonomies.model_dump(),
             "confidence": intel.confidence,
         })
@@ -215,8 +219,10 @@ async def fetch_analysis(security_id: str) -> BondAnalysis:
     p, y = match["price"], match["yield"]
     vol_mm = _num(p.get("D. Vol (MM)"))
     issuer = (p.get("Global ID", "").split() or [None])[0]
+    local = p.get("Local ID")
     return BondAnalysis(
-        intelligence=classify(p.get("Local ID"), issuer),
+        intelligence=classify(local, issuer, green_ids=await green_ids(),
+                              green_issue=await green_detail(local)),
         security_id=security_id,
         type="corporate",
         issuer=issuer,

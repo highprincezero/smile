@@ -32,19 +32,19 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 
 
 @router.get("/api/list-bonds")
-async def list_bonds(type: str = "corporate", query: str | None = None, include_all: bool = False):
-    """List available securities with their real PDS Local IDs.
-
-    Platform coverage is GREEN bonds only by default; include_all=true returns
-    the full PDS corporate board (internal/analyst use)."""
+async def list_bonds(type: str = "corporate", query: str | None = None, green_only: bool = False):
+    """List securities with their real PDS Local IDs. Returns ALL bonds by
+    default, each with a `green` flag (authoritative, from the PDS Listed
+    Securities Database). Pass green_only=true to filter to green only."""
     if type != "corporate":
         return {"type": type, "available": False, "securities": []}
     try:
-        securities = await list_securities(query, green_only=not include_all)
+        securities = await list_securities(query, green_only=green_only)
     except SourceFetchError as e:
         return _error(502, "upstream_unavailable", str(e))
+    green_count = sum(1 for s in securities if s.get("green"))
     return {"type": "corporate", "available": True, "count": len(securities),
-            "coverage": "all" if include_all else "green", "securities": securities}
+            "green_count": green_count, "securities": securities}
 
 
 @router.get("/api/bond-stats")

@@ -21,6 +21,8 @@ from .schema import BondIntelligence, TaxonomyAlignment
 SECTOR_MAP: dict[str, tuple[str, str]] = {
     "AC":    ("Holding Firms", "Conglomerate"),
     "ACEN":  ("Energy", "Renewable Power"),
+    "ALCO":  ("Property", "Sustainable Real Estate"),
+    "CREIT": ("Property", "Renewable-Energy REIT"),
     "AEV":   ("Holding Firms", "Conglomerate"),
     "ALI":   ("Property", "Real Estate Development"),
     "AP":    ("Energy", "Power Generation"),
@@ -55,19 +57,9 @@ SECTOR_MAP: dict[str, tuple[str, str]] = {
     "VLL":   ("Property", "Real Estate Development"),
 }
 
-# ---------------------------------------------------------------------------
-# 2. AUTHORITATIVE green-bond issuers (user-confirmed 2026-07-05).
-#    Green = AC Energy (ACEN) + Energy Development Corp (EDC) ONLY — both are
-#    renewable-energy pure-plays. Do NOT add issuers here on a heuristic:
-#    SMPH (SM Prime) and bank "sustainability" bonds are NOT green. Every new
-#    green issuer must be user-confirmed before being added. See memory
-#    project_greenfy_intelligence_layer.
-# ---------------------------------------------------------------------------
-THEME_MAP: dict[str, tuple[str, str]] = {
-    # ticker: (theme, basis)
-    "ACEN": ("green", "AC Energy — renewable-energy issuer; confirmed green-bond issuer."),
-    "EDC":  ("green", "Energy Development Corp — geothermal/renewables; confirmed green-bond issuer."),
-}
+# Green is NOT determined by issuer heuristics — it comes from the PDS Listed
+# Securities Database (ISSUE column labeled "Green Bonds"). See green_registry.py.
+# classify() receives the authoritative green-id set + optional PDS issue text.
 
 # ---------------------------------------------------------------------------
 # 3. Theme -> conservative per-framework alignment verdicts.
@@ -107,30 +99,40 @@ def _ticker_stem(local_id: str | None, issuer: str | None) -> str | None:
     return None
 
 
-def classify(local_id: str | None, issuer: str | None) -> BondIntelligence:
-    """Deterministic v1 classification for one security."""
+def classify(
+    local_id: str | None,
+    issuer: str | None,
+    green_ids: set[str] | None = None,
+    green_issue: str | None = None,
+) -> BondIntelligence:
+    """Classify one security. `green_ids` = authoritative set of normalized PDS
+    Local IDs labeled green (from green_registry); `green_issue` = the PDS ISSUE
+    text for this security if green. Green is set ONLY when the security's own
+    Local ID is in that PDS-sourced set — no issuer heuristics."""
+    from .sources._common import normalize_id
+
     ticker = _ticker_stem(local_id, issuer)
-    if ticker is None:
-        return BondIntelligence(confidence="unknown", basis="Issuer not in classification map.")
+    sector, sub_sector = SECTOR_MAP.get(ticker, (None, None)) if ticker else (None, None)
 
-    sector, sub_sector = SECTOR_MAP[ticker]
-    theme, basis = THEME_MAP.get(ticker, (None, None))
+    is_green = bool(green_ids and local_id and normalize_id(local_id) in green_ids)
 
-    if theme:
+    if is_green:
         return BondIntelligence(
             sector=sector,
             sub_sector=sub_sector,
-            theme=theme,  # type: ignore[arg-type]
-            taxonomies=_THEME_TAXONOMY[theme].model_copy(),
-            confidence="indicative",
-            basis=f"{basis} Issuer-level rule; per-series verification pending.",
+            theme="green",
+            taxonomies=_THEME_TAXONOMY["green"].model_copy(),
+            confidence="verified",
+            basis=f"PDS-labeled green issue: {green_issue}" if green_issue
+                  else "Labeled green in the PDS Listed Securities Database.",
         )
 
     return BondIntelligence(
         sector=sector,
         sub_sector=sub_sector,
-        theme="unknown",
-        taxonomies=TaxonomyAlignment(),
-        confidence="indicative",
-        basis="Sector from issuer ticker; no labeled-bond programme on record for this issuer.",
+        theme="conventional" if sector else "unknown",
+        taxonomies=(_THEME_TAXONOMY["conventional"].model_copy() if sector else TaxonomyAlignment()),
+        confidence="verified" if sector else "unknown",
+        basis="Not labeled green in the PDS Listed Securities Database."
+              if sector else "Issuer not in classification map.",
     )

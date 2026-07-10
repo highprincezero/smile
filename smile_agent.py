@@ -99,25 +99,23 @@ async def analyze_bond(args: dict) -> dict:
 
 @tool(
     "list_bonds",
-    "List the bonds available on the platform (with their REAL PDS Local IDs). Coverage "
-    "is GREEN-labeled bonds by default — do NOT pass 'green'/'sustainability'/'bond' as "
-    "the query; leave query empty for the full green list, or pass an ISSUER name/ticker "
-    "only (e.g. 'EDC', 'SM Prime') to narrow it. ALWAYS call this when the user asks "
-    "generally about bonds, asks 'what can I look at', or names an issuer — so you "
-    "present real security IDs instead of guessing.",
-    {"query": str},
+    "List the bonds available on the platform (REAL PDS Local IDs). Returns ALL corporate "
+    "bonds; each has a `green` flag (true = PDS-labeled green bond). To narrow, pass an "
+    "ISSUER name/ticker as query (e.g. 'EDC', 'Ayala') — NOT generic words like "
+    "'green'/'bond'. For ONLY green bonds, pass green_only=true. ALWAYS call this when the "
+    "user asks generally about bonds, asks 'what can I look at', asks which are green, or "
+    "names an issuer — so you present real security IDs instead of guessing.",
+    {"query": str, "green_only": bool},
 )
 async def list_bonds(args: dict) -> dict:
-    # Generic theme words would be matched against IDs/ISINs and return nothing —
-    # the platform list is already green-only, so strip them.
     _GENERIC = {"green", "greens", "sustainability", "sustainable", "esg", "bond", "bonds", "labeled", "label"}
     query = " ".join(w for w in (args.get("query", "") or "").split() if w.lower() not in _GENERIC)
+    params = {"type": "corporate", "query": query}
+    if args.get("green_only"):
+        params["green_only"] = "true"
     try:
         async with httpx.AsyncClient(timeout=30.0) as http:
-            resp = await http.get(
-                f"{_SELF_BASE}/api/list-bonds",
-                params={"type": "corporate", "query": query},
-            )
+            resp = await http.get(f"{_SELF_BASE}/api/list-bonds", params=params)
         return {"content": [{"type": "text", "text": resp.text}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": f"LIVE_BOND_DATA_UNAVAILABLE: {e}"}]}
