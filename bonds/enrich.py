@@ -56,18 +56,17 @@ SECTOR_MAP: dict[str, tuple[str, str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# 2. Issuers with publicly announced labeled-bond PROGRAMMES.
-#    Theme is applied issuer-wide as "indicative" — per-series verification
-#    (framework docs / SPOs) is a later, higher-confidence pass.
+# 2. AUTHORITATIVE green-bond issuers (user-confirmed 2026-07-05).
+#    Green = AC Energy (ACEN) + Energy Development Corp (EDC) ONLY — both are
+#    renewable-energy pure-plays. Do NOT add issuers here on a heuristic:
+#    SMPH (SM Prime) and bank "sustainability" bonds are NOT green. Every new
+#    green issuer must be user-confirmed before being added. See memory
+#    project_greenfy_intelligence_layer.
 # ---------------------------------------------------------------------------
 THEME_MAP: dict[str, tuple[str, str]] = {
     # ticker: (theme, basis)
-    "ACEN": ("green", "ACEN issues under a green finance framework (renewables capex)."),
-    "EDC":  ("green", "EDC geothermal issuances sit under its green bond framework."),
-    "BPI":  ("sustainability", "BPI runs a sustainable funding framework (ASEAN-labeled issuances)."),
-    "RCB":  ("sustainability", "RCBC has issued ASEAN sustainability bonds under its framework."),
-    "BDO":  ("sustainability", "BDO has issued ASEAN sustainability bonds under its framework."),
-    "SMPH": ("green", "SM Prime has issued under a green finance framework."),
+    "ACEN": ("green", "AC Energy — renewable-energy issuer; confirmed green-bond issuer."),
+    "EDC":  ("green", "Energy Development Corp — geothermal/renewables; confirmed green-bond issuer."),
 }
 
 # ---------------------------------------------------------------------------
