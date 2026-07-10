@@ -18,7 +18,7 @@ from .normalize import NormalizationError, normalize
 from .schema import AnalyzeBondRequest, BondErrorResponse
 from .analytics import compute_stats
 from .sources import fetch_corporate_analysis, fetch_government
-from .sources.pds_corporate import list_securities
+from .sources.pds_corporate import board_as_of, list_securities
 from .sources._common import SecurityNotFound, SourceFetchError
 
 router = APIRouter()
@@ -40,11 +40,12 @@ async def list_bonds(type: str = "corporate", query: str | None = None, green_on
         return {"type": type, "available": False, "securities": []}
     try:
         securities = await list_securities(query, green_only=green_only)
+        as_of = await board_as_of()
     except SourceFetchError as e:
         return _error(502, "upstream_unavailable", str(e))
     green_count = sum(1 for s in securities if s.get("green"))
     return {"type": "corporate", "available": True, "count": len(securities),
-            "green_count": green_count, "securities": securities}
+            "green_count": green_count, "as_of": as_of, "securities": securities}
 
 
 @router.get("/api/bond-stats")

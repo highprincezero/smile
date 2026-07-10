@@ -163,6 +163,11 @@ def _alias_prefixes(q: str) -> set[str]:
     return prefixes
 
 
+async def board_as_of() -> str | None:
+    """The 'as of' date label of the current PDS Corporate Board Summary."""
+    return (await _load_board()).get("date")
+
+
 async def list_securities(
     query: str | None = None, limit: int = 500, green_only: bool = False
 ) -> list[dict]:
