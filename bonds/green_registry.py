@@ -25,7 +25,7 @@ _PDF_RE = r"https://pdswordpressbucket[^\"']*Listed-Securities-Database[^\"']*\.
 _HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": LISTING_PAGE}
 _TTL = 6 * 3600  # PDS Listed Securities DB updates ~daily; refresh a few times a day
 
-_cache: dict = {"ts": 0.0, "as_of": None, "source_url": None, "ids": set(), "detail": {}}
+_cache: dict = {"ts": 0.0, "as_of": None, "source_url": None, "ids": set(), "detail": {}, "listing": {}}
 _lock = asyncio.Lock()
 
 
@@ -34,9 +34,14 @@ def _latest_pdf_url(html: str) -> str | None:
     return hits[-1] if hits else None
 
 
-def _parse_green(pdf_bytes: bytes) -> tuple[set[str], dict]:
+def _parse_green(pdf_bytes: bytes) -> tuple[set[str], dict, dict]:
+    """Parse the PDS Listed Securities DB. Returns (green_ids, green_issue_text,
+    listing_rows) where listing_rows keys EVERY series (normalized id) to its
+    full listing record — issuer name, issue description, outstanding amount,
+    issue/listing dates, ISIN — used by the bond-detail endpoint."""
     ids: set[str] = set()
     detail: dict[str, str] = {}
+    listing: dict[str, dict] = {}
     header = None
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
@@ -51,11 +56,26 @@ def _parse_green(pdf_bytes: bytes) -> tuple[set[str], dict]:
                     d = dict(zip(header, cells))
                     issue = d.get("ISSUE", "")
                     series = d.get("SERIES CODE", "")
-                    if series and re.search(r"green", issue, re.I):
-                        nid = normalize_id(series)
+                    if not series:
+                        continue
+                    # Column label carries a unit suffix that may change
+                    # ("(PhP Billions)") — match by prefix to stay robust.
+                    amount = next((v for k, v in d.items()
+                                   if k.startswith("OUTSTANDING ISSUE AMOUNT")), None)
+                    nid = normalize_id(series)
+                    listing[nid] = {
+                        "issuer_name": d.get("ISSUER") or None,
+                        "issue": issue or None,
+                        "isin": d.get("ISIN1") or None,
+                        "outstanding_amount_bn": amount or None,
+                        "issue_date": d.get("ISSUE DATE") or None,
+                        "listing_date": d.get("LISTING DATE") or None,
+                        "issuer_type": d.get("ISSUER TYPE") or None,
+                    }
+                    if re.search(r"green", issue, re.I):
                         ids.add(nid)
                         detail[nid] = issue
-    return ids, detail
+    return ids, detail, listing
 
 
 async def _load() -> dict:
@@ -72,11 +92,11 @@ async def _load() -> dict:
                 # keep any stale cache rather than wiping green flags on a transient failure
                 return _cache
             pdf_bytes = (await client.get(url)).content
-        ids, detail = _parse_green(pdf_bytes)
+        ids, detail, listing = _parse_green(pdf_bytes)
         m = re.search(r"as-of-([\d.]+)\.pdf", url)
         if ids:
             _cache.update(ts=time.time(), as_of=(m.group(1) if m else None),
-                          source_url=url, ids=ids, detail=detail)
+                          source_url=url, ids=ids, detail=detail, listing=listing)
         return _cache
 
 
@@ -90,3 +110,9 @@ async def green_detail(local_id: str) -> str | None:
     """The PDS ISSUE text for a green security (e.g. 'ASEAN Green Bonds Due 2027')."""
     c = await _load()
     return c["detail"].get(normalize_id(local_id))
+
+
+async def listing_record(local_id: str) -> dict | None:
+    """Full PDS Listed-Securities record for any series (amount, dates, issuer name)."""
+    c = await _load()
+    return c["listing"].get(normalize_id(local_id))

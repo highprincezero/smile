@@ -48,6 +48,28 @@ async def list_bonds(type: str = "corporate", query: str | None = None, green_on
             "green_count": green_count, "as_of": as_of, "securities": securities}
 
 
+@router.get("/api/bond/{local_id}")
+async def bond_detail(local_id: str):
+    """Full detail for one security: PDS board pricing + Listed-Securities
+    listing record (outstanding amount, dates, issuer name) + intelligence
+    (sector/theme/green/taxonomies). Country is PH (PDS-listed)."""
+    from .green_registry import listing_record
+    from .sources._common import SecurityNotFound
+
+    try:
+        analysis = await fetch_corporate_analysis(local_id)
+        listing = await listing_record(local_id)
+    except SecurityNotFound as e:
+        return _error(404, "not_found", str(e))
+    except SourceFetchError as e:
+        return _error(502, "upstream_unavailable", str(e))
+
+    body = analysis.model_dump(mode="json")
+    body["country"] = "PH"
+    body["listing"] = listing
+    return body
+
+
 @router.get("/api/bond-stats")
 async def bond_stats(issuer: str | None = None):
     """Statistical analysis (summary, correlation, variance, trend, by-issuer) over the
