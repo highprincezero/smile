@@ -24,6 +24,19 @@ class TaxonomyAlignment(BaseModel):
     asean_gss: AlignmentStatus = "unknown"
 
 
+class CO2Disclosure(BaseModel):
+    """A single issuer-published CO2e-avoided figure. NOT a constant: it is a
+    point-in-time disclosure, meaningful only with its period + scope + source,
+    and refreshed whenever the issuer publishes a newer report."""
+
+    value_t: float = Field(..., description="Tonnes CO2e avoided, exactly as disclosed.")
+    period: str = Field(..., description="Reporting period the figure covers, e.g. '9M 2024', 'FY2022', 'cumulative to Dec 2025'.")
+    scope: str = Field(..., description="'bond-level' or 'programme-level'.")
+    as_of: Optional[str] = Field(None, description="Disclosure/report date (YYYY-MM-DD).")
+    source_url: Optional[str] = Field(None, description="Link to the issuer document the figure came from.")
+    note: Optional[str] = Field(None, description="Any qualifier on how the figure is attributed.")
+
+
 class BondIntelligence(BaseModel):
     """Classification + sustainability intelligence layered on top of raw PDS data.
 
@@ -35,8 +48,10 @@ class BondIntelligence(BaseModel):
     sub_sector: Optional[str] = None
     theme: Theme = "unknown"
     taxonomies: TaxonomyAlignment = Field(default_factory=TaxonomyAlignment)
-    co2_avoided_t: Optional[float] = Field(
-        None, description="Reported tonnes CO2e avoided per year; None unless issuer-published."
+    co2: Optional["CO2Disclosure"] = Field(
+        None,
+        description="Issuer-published CO2e-avoided disclosure (value + period + scope + source). "
+                    "None unless the issuer has published a bond- or programme-attributable figure.",
     )
     confidence: Literal["verified", "indicative", "unknown"] = "unknown"
     basis: Optional[str] = Field(None, description="Short human-readable rationale for the classification.")

@@ -79,6 +79,11 @@ def _parse_green(pdf_bytes: bytes) -> tuple[set[str], dict, dict]:
 
 
 async def _load() -> dict:
+    # Whenever bond data is pulled, consider refreshing issuer CO2 figures
+    # too (fire-and-forget, weekly-TTL-gated inside co2_refresh -> cheap no-op
+    # when fresh). Keeps CO2 auto-updated without a separate scheduler.
+    from .co2_refresh import maybe_refresh_in_background
+    maybe_refresh_in_background()
     if time.time() - _cache["ts"] < _TTL and _cache["ids"]:
         return _cache
     async with _lock:

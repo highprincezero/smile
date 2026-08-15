@@ -1,0 +1,18 @@
+{
+  "ACEN": {
+    "value_t": 373328,
+    "period": "9M 2024",
+    "scope": "bond-level",
+    "as_of": "2024-09-30",
+    "source_url": "https://www.acenrenewables.com/investors/green-finance-leadership/use-of-green-bond-proceeds/",
+    "note": "Issuer-published; auto-refreshed from issuer disclosure."
+  },
+  "ALCO": {
+    "value_t": 27048.942,
+    "period": "FY2022",
+    "scope": "bond-level",
+    "as_of": "2022-12-31",
+    "source_url": "https://arthaland.com/assets/documents/ASEAN-Green-Bonds-2022-Impact-Report-Final.pdf",
+    "note": "Issuer-published; auto-refreshed from issuer disclosure."
+  }
+}

@@ -12,7 +12,10 @@ Anything we cannot classify stays "unknown" — verdicts are never fabricated.
 Every payload carries `confidence` + `basis` so the UI can label honestly.
 """
 
-from .schema import BondIntelligence, TaxonomyAlignment
+import json
+from pathlib import Path
+
+from .schema import BondIntelligence, CO2Disclosure, TaxonomyAlignment
 
 # ---------------------------------------------------------------------------
 # 1. Issuer ticker stem -> (sector, sub_sector)
@@ -99,6 +102,41 @@ def _ticker_stem(local_id: str | None, issuer: str | None) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# CO2e-avoided disclosures. NOT hardcoded: loaded from an editable data file so
+# figures can be refreshed (and sources attached) without a code change. Each
+# record is a point-in-time issuer disclosure keyed by issuer ticker stem.
+# ---------------------------------------------------------------------------
+_CO2_DATA_PATH = Path(__file__).with_name("data") / "co2_disclosures.json"
+
+
+# mtime-keyed cache: the automated refresher rewrites the JSON, so the app must
+# re-read it when the file changes -- without a process restart.
+_co2_cache: dict = {"mtime": None, "data": {}}
+
+
+def _co2_disclosures() -> dict:
+    """Load issuer CO2e disclosures from the data file, re-reading only when the
+    file changes on disk. Missing/invalid -> last good data (or {})."""
+    try:
+        mtime = _CO2_DATA_PATH.stat().st_mtime
+    except OSError:
+        return _co2_cache["data"]
+    if mtime != _co2_cache["mtime"]:
+        try:
+            _co2_cache["data"] = json.loads(_CO2_DATA_PATH.read_text(encoding="utf-8"))
+            _co2_cache["mtime"] = mtime
+        except (OSError, ValueError):
+            pass  # keep last good data on a transient bad read
+    return _co2_cache["data"]
+
+
+def co2_for(ticker: str | None) -> CO2Disclosure | None:
+    """Structured issuer CO2e disclosure for a ticker stem, or None if unpublished."""
+    rec = _co2_disclosures().get(ticker) if ticker else None
+    return CO2Disclosure(**rec) if rec else None
+
+
 def classify(
     local_id: str | None,
     issuer: str | None,
@@ -122,6 +160,7 @@ def classify(
             sub_sector=sub_sector,
             theme="green",
             taxonomies=_THEME_TAXONOMY["green"].model_copy(),
+            co2=co2_for(ticker),
             confidence="verified",
             basis=f"PDS-labeled green issue: {green_issue}" if green_issue
                   else "Labeled green in the PDS Listed Securities Database.",

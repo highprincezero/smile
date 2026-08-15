@@ -26,6 +26,13 @@ from smile_agent import chat_stream_claude
 app = FastAPI(title="Smile-Agent API")
 app.include_router(bonds_router)
 
+
+@app.on_event("startup")
+async def _co2_refresh_on_startup():
+    # Fire-and-forget: refresh issuer CO2 figures if the weekly cache is stale.
+    from bonds.co2_refresh import maybe_refresh_in_background
+    maybe_refresh_in_background()
+
 # Allow all origins so ngrok/cloudflare tunnels work
 app.add_middleware(
     CORSMiddleware,
